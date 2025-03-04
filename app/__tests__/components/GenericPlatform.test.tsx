@@ -1,58 +1,51 @@
+import { vi, describe, it, expect } from "vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor, waitForElementToBeRemoved } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { GenericPlatform } from "../../components/GenericPlatform";
 
 import { platforms } from "@gitcoin/passport-platforms";
 const { Ens } = platforms;
 
 import { CeramicContextState } from "../../context/ceramicContext";
-import { mockAddress } from "../../__test-fixtures__/onboardHookValues";
 import { UN_SUCCESSFUL_ENS_RESULT, SUCCESFUL_ENS_RESULTS } from "../../__test-fixtures__/verifiableCredentialResults";
-import { fetchVerifiableCredential } from "@gitcoin/passport-identity";
+import { fetchVerifiableCredential } from "../../utils/credentials";
 import { makeTestCeramicContext, renderWithContext } from "../../__test-fixtures__/contextTestHelpers";
-import { JsonRpcSigner } from "@ethersproject/providers";
-import { mock } from "jest-mock-extended";
-import { Drawer, DrawerOverlay, ChakraProvider } from "@chakra-ui/react";
+import { ChakraProvider } from "@chakra-ui/react";
 import { closeAllToasts } from "../../__test-fixtures__/toastTestHelpers";
 import { PlatformScoreSpec } from "../../context/scorerContext";
-import { getPlatformSpec } from "../../config/platforms";
-import { PlatformSpec } from "@gitcoin/passport-platforms";
+import { PROVIDER_ID } from "@gitcoin/passport-types";
 
-jest.mock("@didtools/cacao", () => ({
+vi.mock("@didtools/cacao", () => ({
   Cacao: {
-    fromBlockBytes: jest.fn(),
+    fromBlockBytes: vi.fn(),
   },
 }));
 
-jest.mock("@gitcoin/passport-identity", () => ({
-  fetchVerifiableCredential: jest.fn(),
+vi.mock("../../utils/credentials", () => ({
+  fetchVerifiableCredential: vi.fn(),
 }));
 
-jest.mock("../../utils/helpers.tsx", () => ({
-  createSignedPayload: jest.fn(),
-  generateUID: jest.fn(),
-  getProviderSpec: jest.fn(),
-  difference: (setA: any, setB: any) => ({
-    size: 1,
-  }),
+vi.mock("../../utils/helpers.tsx", async (importActual) => ({
+  ...(await importActual()),
+  createSignedPayload: vi.fn(),
+  generateUID: vi.fn(),
+  getProviderSpec: vi.fn(),
 }));
 
-jest.mock("next/router", () => ({
+vi.mock("next/router", () => ({
   useRouter: () => ({
     query: { filter: "" },
   }),
 }));
 
-const mockToggleConnection = jest.fn();
-const mockCreatePassport = jest.fn();
-const mockSigner = mock(JsonRpcSigner) as unknown as JsonRpcSigner;
+const mockCreatePassport = vi.fn();
 
 const mockCeramicContext: CeramicContextState = makeTestCeramicContext({
   handleCreatePassport: mockCreatePassport,
 });
 
 const EnsScoreSpec: PlatformScoreSpec = {
-  ...(getPlatformSpec("Ens") as PlatformSpec),
+  ...platforms["Ens"].PlatformDetails,
   possiblePoints: 3,
   earnedPoints: 1,
 };
@@ -60,21 +53,19 @@ const EnsScoreSpec: PlatformScoreSpec = {
 describe("when user has not verified with EnsProvider", () => {
   beforeEach(async () => {
     await closeAllToasts();
-    (fetchVerifiableCredential as jest.Mock).mockResolvedValue({
+    vi.mocked(fetchVerifiableCredential).mockResolvedValue({
       credentials: [SUCCESFUL_ENS_RESULTS],
     });
   });
   it("should display a verification button", () => {
     const drawer = () => (
-      <Drawer isOpen={true} placement="right" size="sm" onClose={() => {}}>
-        <DrawerOverlay />
-        <GenericPlatform
-          platform={new Ens.EnsPlatform()}
-          platFormGroupSpec={Ens.ProviderConfig}
-          platformScoreSpec={EnsScoreSpec}
-          onClose={() => {}}
-        />
-      </Drawer>
+      <GenericPlatform
+        isOpen={true}
+        platform={new Ens.EnsPlatform()}
+        platFormGroupSpec={Ens.ProviderConfig}
+        platformScoreSpec={EnsScoreSpec}
+        onClose={() => {}}
+      />
     );
 
     renderWithContext(mockCeramicContext, drawer());
@@ -83,20 +74,16 @@ describe("when user has not verified with EnsProvider", () => {
   });
   it("should attempt to fetch a verifiable credential when the button is clicked", async () => {
     const drawer = () => (
-      <Drawer isOpen={true} placement="right" size="sm" onClose={() => {}}>
-        <DrawerOverlay />
-        <GenericPlatform
-          platform={new Ens.EnsPlatform()}
-          platFormGroupSpec={Ens.ProviderConfig}
-          platformScoreSpec={EnsScoreSpec}
-          onClose={() => {}}
-        />
-      </Drawer>
+      <GenericPlatform
+        isOpen={true}
+        platform={new Ens.EnsPlatform()}
+        platFormGroupSpec={Ens.ProviderConfig}
+        platformScoreSpec={EnsScoreSpec}
+        onClose={() => {}}
+      />
     );
     renderWithContext(mockCeramicContext, drawer());
 
-    const firstSwitch = screen.queryByTestId("select-all");
-    fireEvent.click(firstSwitch as HTMLElement);
     const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
 
     fireEvent.click(initialVerifyButton as HTMLElement);
@@ -108,21 +95,17 @@ describe("when user has not verified with EnsProvider", () => {
   it("should show success toast when credential is fetched", async () => {
     const drawer = () => (
       <ChakraProvider>
-        <Drawer isOpen={true} placement="right" size="sm" onClose={() => {}}>
-          <DrawerOverlay />
-          <GenericPlatform
-            platform={new Ens.EnsPlatform()}
-            platFormGroupSpec={Ens.ProviderConfig}
-            platformScoreSpec={EnsScoreSpec}
-            onClose={() => {}}
-          />
-        </Drawer>
+        <GenericPlatform
+          platform={new Ens.EnsPlatform()}
+          isOpen={true}
+          platFormGroupSpec={Ens.ProviderConfig}
+          platformScoreSpec={EnsScoreSpec}
+          onClose={() => {}}
+        />
       </ChakraProvider>
     );
     renderWithContext(mockCeramicContext, drawer());
 
-    const firstSwitch = screen.queryByTestId("select-all");
-    fireEvent.click(firstSwitch as HTMLElement);
     const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
 
     fireEvent.click(initialVerifyButton as HTMLElement);
@@ -135,23 +118,19 @@ describe("when user has not verified with EnsProvider", () => {
   it("should prompt user to refresh when session expired", async () => {
     const drawer = () => (
       <ChakraProvider>
-        <Drawer isOpen={true} placement="right" size="sm" onClose={() => {}}>
-          <DrawerOverlay />
-          <GenericPlatform
-            platform={new Ens.EnsPlatform()}
-            platFormGroupSpec={Ens.ProviderConfig}
-            platformScoreSpec={EnsScoreSpec}
-            onClose={() => {}}
-          />
-        </Drawer>
+        <GenericPlatform
+          isOpen={true}
+          platform={new Ens.EnsPlatform()}
+          platFormGroupSpec={Ens.ProviderConfig}
+          platformScoreSpec={EnsScoreSpec}
+          onClose={() => {}}
+        />
       </ChakraProvider>
     );
     renderWithContext(mockCeramicContext, drawer(), {
       checkSessionIsValid: () => false,
     });
 
-    const firstSwitch = screen.queryByTestId("select-all");
-    fireEvent.click(firstSwitch as HTMLElement);
     const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
 
     fireEvent.click(initialVerifyButton as HTMLElement);
@@ -162,26 +141,118 @@ describe("when user has not verified with EnsProvider", () => {
   });
 });
 
-describe("Mulitple EVM plaftorms", () => {
-  it("Should show no stamp modal if the platform isEVM and no stamps were found", async () => {
-    (fetchVerifiableCredential as jest.Mock).mockResolvedValue({
+describe("when user has previously verified with EnsProvider", () => {
+  beforeEach(async () => {
+    await closeAllToasts();
+    vi.mocked(fetchVerifiableCredential).mockResolvedValue({
       credentials: [UN_SUCCESSFUL_ENS_RESULT],
     });
+  });
+
+  it("should show re-verified toast when credential is selected but no longer able to be re-claimed", async () => {
+    const extraProvider = "FakeExtraProviderRequiredForCanSubmitLogic" as PROVIDER_ID;
     const drawer = () => (
-      <Drawer isOpen={true} placement="right" size="sm" onClose={() => {}}>
-        <DrawerOverlay />
+      <ChakraProvider>
         <GenericPlatform
+          isOpen={true}
           platform={new Ens.EnsPlatform()}
-          platFormGroupSpec={Ens.ProviderConfig}
+          platFormGroupSpec={[
+            {
+              ...Ens.ProviderConfig[0],
+              providers: [...Ens.ProviderConfig[0].providers, { title: "Extra", name: extraProvider }],
+            },
+          ]}
           platformScoreSpec={EnsScoreSpec}
           onClose={() => {}}
         />
-      </Drawer>
+      </ChakraProvider>
+    );
+
+    const handlePatchStampsMock = vi.fn();
+    renderWithContext(
+      {
+        ...mockCeramicContext,
+        verifiedProviderIds: ["Ens"],
+        handlePatchStamps: handlePatchStampsMock,
+      },
+      drawer()
+    );
+    const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
+    fireEvent.click(initialVerifyButton as HTMLElement);
+
+    // Wait to see the done toast
+    await waitFor(() => {
+      // Empty b/c don't qualify for any stamps but also don't want to delete any stamps
+      expect(handlePatchStampsMock).toHaveBeenCalledWith([]);
+
+      expect(screen.getByText("Successfully re-verified Ens data point.")).toBeInTheDocument();
+      expect(fetchVerifiableCredential).toHaveBeenCalled();
+    });
+  });
+  it("should remove expired stamps if the no longer qualify", async () => {
+    vi.mocked(fetchVerifiableCredential).mockResolvedValue({
+      credentials: [UN_SUCCESSFUL_ENS_RESULT],
+    });
+    const drawer = () => (
+      <ChakraProvider>
+        <GenericPlatform
+          isOpen={true}
+          platform={new Ens.EnsPlatform()}
+          platFormGroupSpec={[
+            {
+              ...Ens.ProviderConfig[0],
+              providers: [...Ens.ProviderConfig[0].providers],
+            },
+          ]}
+          platformScoreSpec={EnsScoreSpec}
+          onClose={() => {}}
+        />
+      </ChakraProvider>
+    );
+
+    const handlePatchStampsMock = vi.fn();
+    renderWithContext(
+      {
+        ...mockCeramicContext,
+        verifiedProviderIds: ["Ens"],
+        expiredProviders: ["Ens"],
+        handlePatchStamps: handlePatchStampsMock,
+      },
+      drawer()
+    );
+    const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
+    fireEvent.click(initialVerifyButton as HTMLElement);
+
+    // Wait to see the done toast
+    await waitFor(() => {
+      // extraProvider should be empty but ens should be there to delete expired stamp you no longer qualify for
+      expect(handlePatchStampsMock).toHaveBeenCalledWith([
+        {
+          provider: "Ens",
+        },
+      ]);
+
+      expect(fetchVerifiableCredential).toHaveBeenCalled();
+    });
+  });
+});
+
+describe("Mulitple EVM plaftorms", () => {
+  it("Should show no stamp modal if the platform isEVM and no stamps were found", async () => {
+    vi.mocked(fetchVerifiableCredential).mockResolvedValue({
+      credentials: [UN_SUCCESSFUL_ENS_RESULT],
+    });
+    const drawer = () => (
+      <GenericPlatform
+        isOpen={true}
+        platform={new Ens.EnsPlatform()}
+        platFormGroupSpec={Ens.ProviderConfig}
+        platformScoreSpec={EnsScoreSpec}
+        onClose={() => {}}
+      />
     );
     renderWithContext(mockCeramicContext, drawer());
 
-    const firstSwitch = screen.queryByTestId("select-all");
-    fireEvent.click(firstSwitch as HTMLElement);
     const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
 
     fireEvent.click(initialVerifyButton as HTMLElement);
@@ -195,21 +266,16 @@ describe("Mulitple EVM plaftorms", () => {
 it("should indicate that there was an error issuing the credential", async () => {
   const drawer = () => (
     <ChakraProvider>
-      <Drawer isOpen={true} placement="right" size="sm" onClose={() => {}}>
-        <DrawerOverlay />
-        <GenericPlatform
-          platform={new Ens.EnsPlatform()}
-          platFormGroupSpec={Ens.ProviderConfig}
-          platformScoreSpec={EnsScoreSpec}
-          onClose={() => {}}
-        />
-      </Drawer>
+      <GenericPlatform
+        isOpen={true}
+        platform={new Ens.EnsPlatform()}
+        platFormGroupSpec={Ens.ProviderConfig}
+        platformScoreSpec={EnsScoreSpec}
+        onClose={() => {}}
+      />
     </ChakraProvider>
   );
-  renderWithContext({ ...mockCeramicContext, handlePatchStamps: jest.fn().mockRejectedValue(500) }, drawer());
-
-  const firstSwitch = screen.queryByTestId("select-all");
-  fireEvent.click(firstSwitch as HTMLElement);
+  renderWithContext({ ...mockCeramicContext, handlePatchStamps: vi.fn().mockRejectedValue(500) }, drawer());
   const initialVerifyButton = screen.queryByTestId("button-verify-Ens");
 
   fireEvent.click(initialVerifyButton as HTMLElement);

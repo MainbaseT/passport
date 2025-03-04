@@ -1,56 +1,17 @@
-// ---- Testing libraries
 import request from "supertest";
 import { PassportCache } from "@gitcoin/passport-platforms";
-
-// ---- Test subject
-import { app } from "../src/index";
-
 import { MultiAttestationRequest, ZERO_BYTES32, NO_EXPIRATION } from "@ethereum-attestation-service/eas-sdk";
 
-import * as identityMock from "@gitcoin/passport-identity";
-import * as easSchemaMock from "../src/utils/easStampSchema";
-import * as easPassportSchemaMock from "../src/utils/easPassportSchema";
-import { IAMError } from "../src/utils/scorerService";
+import { app } from "../src/index.js";
 
-jest.mock("@gitcoin/passport-identity", () => ({
-  ...jest.requireActual("@gitcoin/passport-identity"),
-}));
+import * as easSchemaMock from "../src/utils/easStampSchema.js";
 
-jest.mock("ethers", () => {
-  const originalModule = jest.requireActual("ethers");
-  const ethers = originalModule.ethers;
-  const utils = originalModule.utils;
+import { toJsonObject } from "../src/utils/json.js";
+import axios from "axios";
 
-  return {
-    utils: {
-      ...utils,
-      getAddress: jest.fn().mockImplementation(() => {
-        return "0x0";
-      }),
-      verifyMessage: jest.fn().mockImplementation(() => {
-        return "string";
-      }),
-      splitSignature: jest.fn().mockImplementation(() => {
-        return { v: 0, r: "r", s: "s" };
-      }),
-    },
-    ethers,
-  };
-});
+const mockedAxiosGet = axios.get as jest.Mock;
 
-jest.mock("@ethereum-attestation-service/eas-sdk", () => {
-  return {
-    SchemaEncoder: jest.fn().mockImplementation(() => {
-      return {
-        encodeData: jest.fn().mockImplementation(() => {
-          return "0x1234";
-        }),
-      };
-    }),
-    ZERO_BYTES32: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    NO_EXPIRATION: 0,
-  };
-});
+jest.mock("axios");
 
 jest.mock("moralis", () => ({
   EvmApi: {
@@ -63,36 +24,29 @@ jest.mock("moralis", () => ({
 }));
 
 const chainIdHex = "0xa";
+const mockRecipient = "0x5678000000000000000000000000000000000000";
 
 const mockMultiAttestationRequestWithScore: MultiAttestationRequest[] = [
   {
-    schema: "0x853a55f39e2d1bf1e6731ae7148976fbbb0c188a898a233dba61a233d8c0e4a4",
+    schema: "0x6ab5d34260fca0cfcf0e76e96d439cace6aa7c3c019d7c4580ed52c6845e9c89", // This is configured in onchain info for chain "0xa"
     data: [
       {
-        recipient: "0x0987654321098765432109876543210987654321",
+        recipient: mockRecipient,
         data: easSchemaMock.encodeEasScore({
           score: 23.45,
-          scorer_id: 123,
+          scorer_id: parseInt(process.env.ALLO_SCORER_ID || ""),
         }),
         expirationTime: NO_EXPIRATION,
-        revocable: false,
+        revocable: true,
         refUID: ZERO_BYTES32,
-        value: "25000000000000000",
+        value: BigInt("0"),
       },
     ],
   },
 ];
 
 describe("POST /eas/score", () => {
-  let verifyCredentialSpy: jest.SpyInstance;
-  let formatMultiAttestationRequestSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    verifyCredentialSpy = jest.spyOn(identityMock, "verifyCredential").mockResolvedValue(true);
-    formatMultiAttestationRequestSpy = jest
-      .spyOn(easPassportSchemaMock, "formatMultiAttestationRequestWithScore")
-      .mockResolvedValue(mockMultiAttestationRequestWithScore);
-  });
+  beforeEach(() => {});
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -113,6 +67,17 @@ describe("POST /eas/score", () => {
   });
 
   it("successfully verifies and formats score", async () => {
+    mockedAxiosGet.mockImplementationOnce(
+      async (): Promise<any> => ({
+        data: {
+          status: "DONE",
+          evidence: {
+            rawScore: "23.45",
+          },
+        },
+      })
+    );
+
     jest.spyOn(PassportCache.prototype, "init").mockImplementation(() => Promise.resolve());
     jest.spyOn(PassportCache.prototype, "set").mockImplementation(() => Promise.resolve());
     jest.spyOn(PassportCache.prototype, "get").mockImplementation((key) => {
@@ -121,6 +86,7 @@ describe("POST /eas/score", () => {
       } else if (key === "ethPriceLastUpdate") {
         return Promise.resolve((Date.now() - 1000 * 60 * 6).toString());
       }
+      return Promise.resolve(null);
     });
     const nonce = 0;
     const recipient = "0x5678000000000000000000000000000000000000";
@@ -132,13 +98,14 @@ describe("POST /eas/score", () => {
       .expect(200)
       .expect("Content-Type", /json/);
 
-    expect(response.body.passport.multiAttestationRequest).toEqual(mockMultiAttestationRequestWithScore);
+    expect(response.body.passport.multiAttestationRequest).toEqual(toJsonObject(mockMultiAttestationRequestWithScore));
     expect(response.body.passport.nonce).toEqual(nonce);
-    expect(formatMultiAttestationRequestSpy).toBeCalled();
   });
 
   it("handles error during the formatting of the score", async () => {
-    formatMultiAttestationRequestSpy.mockRejectedValue(new IAMError("Formatting error"));
+    mockedAxiosGet.mockImplementationOnce(async (): Promise<any> => {
+      throw new Error("Formatting error");
+    });
 
     const nonce = 0;
     const recipient = "0x5678000000000000000000000000000000000000";
@@ -150,6 +117,6 @@ describe("POST /eas/score", () => {
       .expect(500)
       .expect("Content-Type", /json/);
 
-    expect(response.body.error).toEqual("Error formatting onchain score, IAMError: Formatting error");
+    expect(response.body.error).toEqual("Error formatting onchain score, Error: Formatting error");
   });
 });

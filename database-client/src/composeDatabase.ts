@@ -11,18 +11,19 @@ import {
   SecondaryStorageAddResponse,
   SecondaryStorageDeleteResponse,
   SecondaryStorageBulkPatchResponse,
+  VerifiableEip712Credential,
 } from "@gitcoin/passport-types";
 
 import { definition as GitcoinPassportStampDefinition } from "@gitcoin/passport-schemas";
 import { GraphQLError } from "graphql";
-import { Logger } from "./logger";
-import { WriteOnlySecondaryDataStorageBase } from "./types";
+import { Logger } from "./logger.js";
+import { WriteOnlySecondaryDataStorageBase } from "./types.js";
 import { RuntimeCompositeDefinition } from "@composedb/types";
 
 // const LOCAL_CERAMIC_CLIENT_URL = "http://localhost:7007";
 const COMMUNITY_TESTNET_CERAMIC_CLIENT_URL = "https://ceramic-clay.3boxlabs.com";
 
-type PassportWrapperLoadResponse = {
+export type PassportWrapperLoadResponse = {
   id: string;
   vcID: string;
   isDeleted: boolean;
@@ -53,10 +54,22 @@ const formatCredentialFromCeramic = (
     "@context": encodedCredential._context,
     type: encodedCredential.type,
     credentialSubject: {
-      "@context": encodedCredential.credentialSubject._context,
+      "@context": {
+        nullifiers: encodedCredential.credentialSubject._context.nullifiers
+          ? {
+              "@container": (encodedCredential.credentialSubject._context.nullifiers as { [key: string]: string })[
+                "_container"
+              ] as string,
+              "@type": (encodedCredential.credentialSubject._context.nullifiers as { [key: string]: string })["_type"],
+            }
+          : undefined,
+        hash: encodedCredential.credentialSubject._context.hash,
+        provider: encodedCredential.credentialSubject._context.provider,
+      },
       id: encodedCredential.credentialSubject.id,
       hash: encodedCredential.credentialSubject.hash,
       provider: encodedCredential.credentialSubject.provider,
+      nullifiers: encodedCredential.credentialSubject.nullifiers,
       // address: encodedCredential.credentialSubject.address,
       // challenge: encodedCredential.credentialSubject.challenge,
     },
@@ -80,6 +93,7 @@ const formatCredentialFromCeramic = (
           Document: encodedCredential.proof.eip712Domain.types.Document,
           EIP712Domain: encodedCredential.proof.eip712Domain.types.EIP712Domain,
           Proof: encodedCredential.proof.eip712Domain.types.Proof,
+          NullifiersContext: encodedCredential.proof.eip712Domain.types.NullifiersContext,
         },
       },
     },
@@ -88,6 +102,51 @@ const formatCredentialFromCeramic = (
 };
 
 export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
+  did: string;
+  composeImpl: ComposeDatabaseImpl;
+  lastOp: Promise<any> = Promise.resolve();
+
+  constructor(did: DID, ceramicUrl: string = COMMUNITY_TESTNET_CERAMIC_CLIENT_URL, logger?: Logger) {
+    this.did = (did.hasParent ? did.parent : did.id).toLowerCase();
+    this.composeImpl = new ComposeDatabaseImpl(did, ceramicUrl, logger);
+  }
+
+  addStamps = async (stamps: Stamp[]): Promise<SecondaryStorageAddResponse[]> => {
+    const op = this.lastOp.then(async () => {
+      await this.composeImpl.getPassportWithWrapper();
+      const promiseToReturn = this.composeImpl.addStamps(stamps);
+      return promiseToReturn;
+    });
+    this.lastOp = op;
+    return op;
+  };
+
+  patchStamps = async (stampPatches: StampPatch[]): Promise<SecondaryStorageBulkPatchResponse> => {
+    const op = this.lastOp.then(async () => {
+      // No need to call this.composeImpl.getPassportWithWrapper(); as it is already called because deleteStamps in patchStamps function
+      const promiseToReturn = this.composeImpl.patchStamps(stampPatches);
+      return promiseToReturn;
+    });
+    this.lastOp = op;
+    return op;
+  };
+
+  deleteStamps = async (providers: PROVIDER_ID[]): Promise<SecondaryStorageDeleteResponse[]> => {
+    const op = this.lastOp.then(async () => {
+      // No need to call this.composeImpl.getPassportWithWrapper(); as it is already called in the deleteStamps function
+      const promiseToReturn = this.composeImpl.deleteStamps(providers);
+      return promiseToReturn;
+    });
+    this.lastOp = op;
+    return op;
+  };
+
+  getPassport = async (): Promise<PassportLoadResponse> => {
+    return this.composeImpl.getPassport();
+  };
+}
+
+export class ComposeDatabaseImpl implements WriteOnlySecondaryDataStorageBase {
   did: string;
   compose: ComposeClient;
   // logger should indicate with tag where error is coming from similar to: [Scorer]
@@ -108,7 +167,8 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
   }
 
   formatCredentialInput = (stamp: Stamp) => {
-    const { type, proof, credentialSubject, issuanceDate, expirationDate, issuer } = stamp.credential;
+    const { type, proof, credentialSubject, issuanceDate, expirationDate, issuer } =
+      stamp.credential as VerifiableEip712Credential;
     if (!proof?.eip712Domain) {
       throw new Error("Invalid stamp");
     }
@@ -124,7 +184,16 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
         type,
         credentialSubject: {
           ...credentialSubject,
-          _context: credentialSubject["@context"],
+          _context: {
+            ...credentialSubject["@context"],
+            nullifiers: credentialSubject["@context"]["nullifiers"]
+              ? {
+                  ...(credentialSubject["@context"]["nullifiers"] as { [key: string]: string }),
+                  _type: (credentialSubject["@context"]["nullifiers"] as { [key: string]: string })["@type"],
+                  _container: (credentialSubject["@context"]["nullifiers"] as { [key: string]: string })["@container"],
+                }
+              : undefined,
+          },
         },
         proof: {
           ...proof,
@@ -133,6 +202,7 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
             ...eip712Domain,
             types: {
               ...types,
+              "@context": types["@context"], // If this is not present explicitly, the TS compiler will scream in the delete statement below
               _context: types["@context"],
             },
           },
@@ -143,6 +213,14 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
     delete input.content.credentialSubject["@context"];
     delete input.content.proof["@context"];
     delete input.content.proof.eip712Domain.types["@context"];
+    if (input.content.credentialSubject._context.nullifiers) {
+      delete (input.content.credentialSubject._context.nullifiers as { [key: string]: string })["@type"];
+      delete (input.content.credentialSubject._context.nullifiers as { [key: string]: string })["@container"];
+    } else {
+      // There will be undefined nullifier in the context introduced by our code above, we need
+      // to delete that otherwise graphql will complain
+      delete input.content.credentialSubject._context["nullifiers"];
+    }
 
     return input;
   };
@@ -169,10 +247,33 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
   };
 
   addStamp = async (stamp: Stamp): Promise<SecondaryStorageAddResponse> => {
+    this.logger.info(`[ComposeDB][addStamp] ${this.did} adding stamp`);
+
     let vcID;
     const input = this.formatCredentialInput(stamp);
-    const result = (await this.compose.executeQuery(
-      `
+
+    let result = null;
+
+    if (input.content.credentialSubject._context.nullifiers) {
+      // Create a stamp with a credentialSubject.nullifiers
+      result = (await this.compose.executeQuery(
+        `
+        mutation CreateGitcoinPassportStampWithNullifiers($input: CreateGitcoinPassportStampWithNullifiersInput!) {
+          createGitcoinPassportStampWithNullifiers(input: $input) {
+            document {
+              id
+            }
+          }
+        }
+        `,
+        { input }
+      )) as GraphqlResponse<{ createGitcoinPassportStampWithNullifiers: { document: { id: string } } }>;
+
+      vcID = result?.data?.createGitcoinPassportStampWithNullifiers?.document?.id;
+    } else {
+      // Create a stamp with a credentialSubject.hash
+      result = (await this.compose.executeQuery(
+        `
         mutation CreateGitcoinPassportVc($input: CreateGitcoinPassportStampInput!) {
           createGitcoinPassportStamp(input: $input) {
             document {
@@ -181,8 +282,11 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
           }
         }
         `,
-      { input }
-    )) as GraphqlResponse<{ createGitcoinPassportStamp: { document: { id: string } } }>;
+        { input }
+      )) as GraphqlResponse<{ createGitcoinPassportStamp: { document: { id: string } } }>;
+
+      vcID = result?.data?.createGitcoinPassportStamp?.document?.id;
+    }
 
     let secondaryStorageError: string | undefined;
     let streamId: string | undefined;
@@ -191,12 +295,19 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
         result.errors
       )}`;
 
-      console.error(`[ComposeDB] ${this.did} addStamp ${secondaryStorageError}`);
-      this.logger.error(`[ComposeDB] ${this.did} addStamp failed to add stamp`, { error: result.errors });
+      console.error(`[ComposeDB][addStamp] ${this.did} failed to add stamp ${secondaryStorageError}`);
+      this.logger.error(`[ComposeDB][addStamp] ${this.did} failed to add stamp`, { error: result.errors });
     } else {
-      vcID = result?.data?.createGitcoinPassportStamp?.document?.id;
+      if (input.content.credentialSubject._context.nullifiers) {
+        const data = result?.data as { createGitcoinPassportStampWithNullifiers: { document: { id: string } } };
+        vcID = data.createGitcoinPassportStampWithNullifiers?.document?.id;
+      } else {
+        const data = result?.data as { createGitcoinPassportStamp: { document: { id: string } } };
+        vcID = data.createGitcoinPassportStamp?.document?.id;
+      }
 
       if (vcID) {
+        this.logger.info(`[ComposeDB][addStamp] ${this.did} adding stamp wrapper`);
         const wrapperRequest = (await this.compose.executeQuery(
           `
             mutation CreateGitcoinStampWrapper($wrapperInput: CreateGitcoinPassportStampWrapperInput!) {
@@ -228,19 +339,19 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
           secondaryStorageError = `[ComposeDB] error thrown from mutation CreateGitcoinStampWrapper, vcID: ${vcID} error: ${JSON.stringify(
             wrapperRequest.errors
           )}`;
-          console.error(`[ComposeDB] ${this.did} addStamp ${secondaryStorageError}`);
-          this.logger.error(`[ComposeDB] ${this.did} addStamp failed to add stamp wrapper`, {
+          console.error(`[ComposeDB][addStamp] ${this.did} ${secondaryStorageError}`);
+          this.logger.error(`[ComposeDB][addStamp] ${this.did} failed to add stamp wrapper`, {
             error: wrapperRequest.errors,
           });
         } else if (!streamId) {
           secondaryStorageError = `[ComposeDB] For vcID: ${vcID} error: streamId=${streamId}`;
-          console.error(`[ComposeDB] ${this.did} addStamp ${secondaryStorageError}`);
-          this.logger.error(`[ComposeDB] ${this.did} addStamp ${secondaryStorageError}`);
+          console.error(`[ComposeDB][addStamp] ${this.did} ${secondaryStorageError}`);
+          this.logger.error(`[ComposeDB][addStamp] ${this.did} ${secondaryStorageError}`);
         }
       } else {
         secondaryStorageError = `[ComposeDB] error: streamId=${vcID}`;
-        console.error(`[ComposeDB] ${this.did} addStamp ${secondaryStorageError}`);
-        this.logger.error(`[ComposeDB] ${this.did} addStamp ${secondaryStorageError}`);
+        console.error(`[ComposeDB][addStamp] ${this.did} ${secondaryStorageError}`);
+        this.logger.error(`[ComposeDB][addStamp] ${this.did} ${secondaryStorageError}`);
       }
     }
 
@@ -256,16 +367,17 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
     this.logger.info(`[ComposeDB] ${this.did} addStamps`, { stamps });
 
     const vcPromises = stamps.map(async (stamp) => await this.addStamp(stamp));
-
     const addRequests = await Promise.allSettled(vcPromises);
-
     const ret = this.checkSettledResponse(addRequests);
+
     console.log(`[ComposeDB] ${this.did} addStamps ret:`, { ret });
     this.logger.info(`[ComposeDB] ${this.did} addStamps ret`, { ret });
     return ret;
   };
 
   deleteStamp = async (streamId: string): Promise<SecondaryStorageDeleteResponse> => {
+    this.logger.info(`[ComposeDB][deleteStamp] ${this.did} deleting stamp with streamId: ${streamId}`);
+
     const deleteRequest = (await this.compose.executeQuery(
       `
       mutation SoftDeleteGitcoinStampWrapper($updateInput: UpdateGitcoinPassportStampWrapperInput!) {
@@ -293,8 +405,8 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
     let secondaryStorageError: string | undefined;
     if (deleteRequest.errors) {
       secondaryStorageError = `[ComposeDB] ${JSON.stringify(deleteRequest.errors)} for vcID: ${streamId}`;
-      console.error(`[ComposeDB] ${this.did} deleteStamp error`, deleteRequest.errors);
-      this.logger.error(`[ComposeDB] ${this.did} deleteStamp error`, { error: deleteRequest.errors });
+      console.error(`[ComposeDB][deleteStamp] ${this.did} error`, deleteRequest.errors);
+      this.logger.error(`[ComposeDB][deleteStamp] ${this.did} error`, { error: deleteRequest.errors });
     }
 
     return {
@@ -366,6 +478,66 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
                 isRevoked
                 vcID
                 vc {
+                  ... on GitcoinPassportStampWithNullifiers {
+                    id
+                    type
+                    _context
+                    expirationDate
+                    issuanceDate
+                    issuer
+                    proof {
+                      _context
+                      created
+                      eip712Domain {
+                        domain {
+                          name
+                        }
+                        primaryType
+                        types {
+                          _context {
+                            name
+                            type
+                          }
+                          CredentialSubject {
+                            name
+                            type
+                          }
+                          Document {
+                            type
+                            name
+                          }
+                          Proof {
+                            name
+                            type
+                          }
+                          EIP712Domain {
+                            name
+                            type
+                          }
+                          NullifiersContext {
+                            name
+                            type
+                          }
+                        }
+                      }
+                      proofPurpose
+                      proofValue
+                      type
+                      verificationMethod
+                    }
+                    credentialSubject {
+                      _context {
+                        nullifiers {
+                          _type
+                          _container
+                        }
+                        provider
+                      }
+                      nullifiers
+                      id
+                      provider
+                    }
+                  }
                   ... on GitcoinPassportStamp {
                     id
                     type
@@ -446,6 +618,8 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
     }
 
     const wrappers = (result?.data?.viewer?.gitcoinPassportStampWrapperList?.edges || []).map((edge) => edge.node);
+    console.log(`[ComposeDB] ${this.did} getPassportWithWrapper returns`, wrappers);
+    this.logger.info(`[ComposeDB] ${this.did} getPassportWithWrapper returns`, { wrappers });
     return wrappers;
   }
 
@@ -459,8 +633,8 @@ export class ComposeDatabase implements WriteOnlySecondaryDataStorageBase {
         credential: formatCredentialFromCeramic(wrapper.vc),
       }));
 
-      console.log(`[ComposeDB] ${this.did} getPassport:`, stamps);
-      this.logger.info(`[ComposeDB] ${this.did} getPassport`, { stamps });
+      console.log(`[ComposeDB] ${this.did} getPassport stamps:`, stamps);
+      this.logger.info(`[ComposeDB] ${this.did} getPassport stamps`, { stamps });
       return {
         status: "Success",
         passport: {

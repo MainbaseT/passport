@@ -1,14 +1,14 @@
 import dotenv from "dotenv";
-import { providers, Contract, version } from "ethers";
-import decoderAbi from "../../../deployments/abi/GitcoinPassportDecoder.json";
+import { JsonRpcProvider, Contract, version } from "ethers";
+import passportDecoderAbi from "../../../deployments/abi/GitcoinPassportDecoder.json" with { type: "json" };
+import providerBitMapInfo from "../static/providerBitMapInfo.json" with { type: "json" };
 
-import providerBitMapInfo from "../static/providerBitMapInfo.json";
 dotenv.config();
 
 console.log(process.argv);
 
 const apiUrl = process.argv[2] + process.env.ALCHEMY_API_KEY;
-const chainId = process.argv[3] as keyof typeof decoderAbi;
+const chainId = process.argv[3] as keyof typeof passportDecoderAbi;
 const decoderContractAddress = process.argv[4];
 
 console.log("ethers version             :", version);
@@ -23,24 +23,15 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
   return diff;
 }
 
-interface CustomContract extends Contract {
-  getProviders: (arg0: number) => Promise<string[]>;
-  currentVersion: () => Promise<string>;
-}
-
 async function main() {
   let exitCode = 0;
-  const provider = new providers.JsonRpcProvider(apiUrl);
-  const decoderContract = new Contract(
-    decoderContractAddress,
-    decoderAbi[chainId],
-    provider
-  ) as unknown as CustomContract;
+  const provider = new JsonRpcProvider(apiUrl);
+  const decoderContract = new Contract(decoderContractAddress, passportDecoderAbi[chainId], provider);
 
   const latestOnChainProviderVersion = await decoderContract.currentVersion();
   console.log("latestOnChainProviderVersion:", latestOnChainProviderVersion);
 
-  const decoderProviders = await decoderContract.getProviders(Number(latestOnChainProviderVersion));
+  const decoderProviders: string[] = await decoderContract.getProviders(Number(latestOnChainProviderVersion));
   const onChainProviders = new Set(decoderProviders.map((p: string, idx: number) => `${idx} => ${p}`));
   const providerBitmapProviders = providerBitMapInfo.reduce((acc, cur) => {
     const idx = cur.index * 256 + cur.bit;

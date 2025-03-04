@@ -1,14 +1,16 @@
 // ----- Types
-import { ProviderExternalVerificationError, type Provider, type ProviderOptions } from "../../types";
+import { ProviderExternalVerificationError, type Provider, type ProviderOptions } from "../../types.js";
 import type { RequestPayload, VerifiedPayload } from "@gitcoin/passport-types";
 
 // ----- Credential verification
-import { getRPCProvider } from "../../utils/signer";
+import { getRPCProvider } from "../../utils/signer.js";
 
 const ENS_PUBLIC_RESOLVERS = [
   "0x231b0ee14048e9dccd1d247744d114a4eb5e8e63",
   "0x4976fb03c32e5b8cfe2b6ccb31c09ba78ebaba41",
 ];
+
+const RPC_URL = process.env.RPC_URL;
 
 // Export a Ens Provider to carry out Ens name check and return a record object
 export class EnsProvider implements Provider {
@@ -30,7 +32,7 @@ export class EnsProvider implements Provider {
       record = undefined;
 
     try {
-      const provider = getRPCProvider(payload);
+      const provider = getRPCProvider(RPC_URL);
       reportedName = await provider.lookupAddress(payload.address);
 
       if (reportedName) {

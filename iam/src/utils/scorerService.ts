@@ -1,8 +1,6 @@
 import axios from "axios";
-import { Score } from "./easStampSchema";
+import { Score } from "./easStampSchema.js";
 import { handleAxiosError } from "@gitcoin/passport-platforms";
-
-const scorerApiGetScore = `${process.env.SCORER_ENDPOINT}/registry/score/${process.env.ALLO_SCORER_ID}`;
 
 export class IAMError extends Error {
   constructor(public message: string) {
@@ -11,7 +9,7 @@ export class IAMError extends Error {
   }
 }
 
-type GetScoreResponse = {
+export type GetScoreResponse = {
   data: {
     status: string;
     evidence: {
@@ -20,9 +18,16 @@ type GetScoreResponse = {
   };
 };
 
+const apiKey = process.env.SCORER_API_KEY;
+
 // Use public endpoint and static api key to fetch score
-export async function fetchPassportScore(address: string): Promise<Score> {
-  const response = await requestScore(address);
+export async function fetchPassportScore(
+  address: string,
+  customScorerId?: number,
+): Promise<Score> {
+  const scorer_id = customScorerId || Number(process.env.ALLO_SCORER_ID);
+
+  const response = await requestScore(address, scorer_id);
 
   const { data } = response;
   if (data.status !== "DONE") {
@@ -31,19 +36,22 @@ export async function fetchPassportScore(address: string): Promise<Score> {
 
   const score: Score = {
     score: Number(data.evidence.rawScore),
-    scorer_id: Number(process.env.ALLO_SCORER_ID),
+    scorer_id,
   };
 
   return score;
 }
 
-async function requestScore(address: string): Promise<GetScoreResponse> {
-  const apiKey = process.env.SCORER_API_KEY;
+async function requestScore(
+  address: string,
+  scorerId: number,
+): Promise<GetScoreResponse> {
+  const getScoreUrl = `${process.env.SCORER_ENDPOINT}/internal/score/${scorerId}/${address}`;
 
   try {
-    return await axios.get(`${scorerApiGetScore}/${address}`, {
+    return await axios.get(getScoreUrl, {
       headers: {
-        "X-API-Key": apiKey,
+        Authorization: apiKey,
       },
     });
   } catch (error) {

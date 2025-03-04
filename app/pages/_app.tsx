@@ -11,20 +11,19 @@ import "../styles/globals.css";
 import { CeramicContextProvider } from "../context/ceramicContext";
 import { DatastoreConnectionContextProvider } from "../context/datastoreConnectionContext";
 import { ScorerContextProvider } from "../context/scorerContext";
-import { OnChainContextProvider } from "../context/onChainContext";
-import ManageAccountCenter from "../components/ManageAccountCenter";
-
-// --- Ceramic Tools
-import { Provider as SelfIdProvider } from "@self.id/framework";
 
 // --- GTM Module
 import TagManager from "react-gtm-module";
 
 import { themes, ThemeWrapper } from "../utils/theme";
 import { StampClaimingContextProvider } from "../context/stampClaimingContext";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useIntercom } from "../hooks/useIntercom";
+import { Web3Context, Web3ErrorContext } from "../hooks/Web3Context";
 
 const GTM_ID = process.env.NEXT_PUBLIC_GOOGLE_TAG_MANAGER_ID || "";
-const INTERCOM_APP_ID = process.env.NEXT_PUBLIC_INTERCOM_APP_ID || "";
+
+const queryClient = new QueryClient();
 
 const RenderOnlyOnClient = ({ children }: { children: React.ReactNode }) => {
   const [isMounted, setIsMounted] = React.useState(false);
@@ -40,18 +39,9 @@ const RenderOnlyOnClient = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Type definition for the window object
-declare global {
-  interface Window {
-    intercomSettings?: {
-      api_base: string;
-      app_id: string;
-    };
-    Intercom: any;
-  }
-}
-
 function App({ Component, pageProps }: AppProps) {
+  const { initialize } = useIntercom();
+
   useEffect(() => {
     TagManager.initialize({
       gtmId: `${GTM_ID}`,
@@ -63,49 +53,9 @@ function App({ Component, pageProps }: AppProps) {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      window.intercomSettings = {
-        api_base: "https://api-iam.intercom.io",
-        app_id: INTERCOM_APP_ID,
-      };
-      (function () {
-        var w: any = window;
-        var ic = w.Intercom;
-        if (typeof ic === "function") {
-          ic("reattach_activator");
-          ic("update", w.intercomSettings);
-        } else {
-          var d = document;
-          var i = function () {
-            // @ts-ignore
-            i.c(arguments);
-          };
-          // @ts-ignore
-          i.q = [];
-          // @ts-ignore
-          i.c = function (args) {
-            // @ts-ignore
-            i.q.push(args);
-          };
-          w.Intercom = i;
-          var l = function () {
-            var s = d.createElement("script");
-            s.type = "text/javascript";
-            s.async = true;
-            s.src = "https://widget.intercom.io/widget/" + INTERCOM_APP_ID;
-            var x = d.getElementsByTagName("script")[0];
-            x.parentNode?.insertBefore(s, x);
-          };
-          if (document.readyState === "complete") {
-            l();
-          } else if (w.attachEvent) {
-            w.attachEvent("onload", l);
-          } else {
-            w.addEventListener("load", l, false);
-          }
-        }
-      })();
+      initialize();
     }
-  }, []);
+  }, [initialize]);
 
   if (typeof window !== "undefined") {
     // pull any search params
@@ -126,7 +76,10 @@ function App({ Component, pageProps }: AppProps) {
 
       // only continue with the process if a code is returned
       if (queryCode) {
-        channel.postMessage({ target: provider, data: { code: queryCode, state: queryState } });
+        channel.postMessage({
+          target: provider,
+          data: { code: queryCode, state: queryState },
+        });
       }
 
       // always close the redirected window
@@ -139,29 +92,29 @@ function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <link rel="shortcut icon" href="/favicon.ico" />
-        <title>Gitcoin Passport</title>
+        <link rel="shortcut icon" href="/favicon.png" />
+        <title>Passport XYZ</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0" />
       </Head>
-      <SelfIdProvider client={{ ceramic: `${process.env.NEXT_PUBLIC_CERAMIC_CLIENT_URL || "testnet-clay"}` }}>
-        <DatastoreConnectionContextProvider>
-          <OnChainContextProvider>
+      <Web3Context>
+        <QueryClientProvider client={queryClient}>
+          <DatastoreConnectionContextProvider>
             <ScorerContextProvider>
               <CeramicContextProvider>
                 <StampClaimingContextProvider>
-                  <ManageAccountCenter>
-                    <RenderOnlyOnClient>
-                      <ThemeWrapper initChakra={true} defaultTheme={themes.LUNARPUNK_DARK_MODE}>
+                  <RenderOnlyOnClient>
+                    <ThemeWrapper initChakra={true} defaultTheme={themes.LUNARPUNK_DARK_MODE}>
+                      <Web3ErrorContext>
                         <Component {...pageProps} />
-                      </ThemeWrapper>
-                    </RenderOnlyOnClient>
-                  </ManageAccountCenter>
+                      </Web3ErrorContext>
+                    </ThemeWrapper>
+                  </RenderOnlyOnClient>
                 </StampClaimingContextProvider>
               </CeramicContextProvider>
             </ScorerContextProvider>
-          </OnChainContextProvider>
-        </DatastoreConnectionContextProvider>
-      </SelfIdProvider>
+          </DatastoreConnectionContextProvider>
+        </QueryClientProvider>
+      </Web3Context>
     </>
   );
 }

@@ -1,26 +1,32 @@
 import { ScorerContext, ScorerContextState } from "../context/scorerContext";
-import { CeramicContext, CeramicContextState, IsLoadingPassportState, platforms } from "../context/ceramicContext";
-import { ProviderSpec, STAMP_PROVIDERS } from "../config/providers";
+import { vi } from "vitest";
+import { CeramicContext, CeramicContextState, IsLoadingPassportState } from "../context/ceramicContext";
+import { platforms, ProviderSpec } from "@gitcoin/passport-platforms";
 import React from "react";
 import { render } from "@testing-library/react";
 import { PLATFORM_ID } from "@gitcoin/passport-types";
 import { PlatformProps } from "../components/GenericPlatform";
-import { OnChainContextState } from "../context/onChainContext";
 import { StampClaimingContextState, StampClaimProgressStatus } from "../context/stampClaimingContext";
 import {
   DatastoreConnectionContext,
   DatastoreConnectionContextState,
   DbAuthTokenStatus,
 } from "../context/datastoreConnectionContext";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { WagmiProvider } from "wagmi";
+import { wagmiConfig } from "../utils/web3";
 
 export const getProviderSpec = (platform: PLATFORM_ID, provider: string): ProviderSpec => {
-  return STAMP_PROVIDERS[platform]
-    ?.find((i) => i.providers.find((p) => p.name == provider))
-    ?.providers.find((p) => p.name == provider) as ProviderSpec;
+  const platformDefinition = platforms[platform];
+  return platformDefinition?.ProviderConfig?.find((i) => i.providers.find((p) => p.name == provider))?.providers.find(
+    (p) => p.name == provider
+  ) as ProviderSpec;
 };
 
 export const makeTestCeramicContext = (initialState?: Partial<CeramicContextState>): CeramicContextState => {
   return {
+    databaseReady: false,
+    database: initialState?.database,
     userDid: undefined,
     passport: {
       issuanceDate: new Date(),
@@ -31,15 +37,15 @@ export const makeTestCeramicContext = (initialState?: Partial<CeramicContextStat
     allPlatforms: new Map<PLATFORM_ID, PlatformProps>(),
     allProvidersState: {
       Google: {
-        providerSpec: STAMP_PROVIDERS.Google as unknown as ProviderSpec,
+        providerSpec: getProviderSpec("Google", "Google"),
         stamp: undefined,
       },
       Ens: {
         providerSpec: getProviderSpec("Ens", "Ens"),
         stamp: undefined,
       },
-      Poh: {
-        providerSpec: getProviderSpec("Poh", "Poh"),
+      Github: {
+        providerSpec: getProviderSpec("Github", "githubContributionActivityGte#30"),
         stamp: undefined,
       },
       POAP: {
@@ -48,6 +54,10 @@ export const makeTestCeramicContext = (initialState?: Partial<CeramicContextStat
       },
       Brightid: {
         providerSpec: getProviderSpec("Brightid", "Brightid"),
+        stamp: undefined,
+      },
+      Outdid: {
+        providerSpec: getProviderSpec("Outdid", "Outdid"),
         stamp: undefined,
       },
       Linkedin: {
@@ -60,22 +70,6 @@ export const makeTestCeramicContext = (initialState?: Partial<CeramicContextStat
       },
       Signer: {
         providerSpec: getProviderSpec("Signer", "Signer"),
-        stamp: undefined,
-      },
-      "GitcoinContributorStatistics#numGrantsContributeToGte#1": {
-        providerSpec: getProviderSpec("Gitcoin", "GitcoinContributorStatistics#numGrantsContributeToGte#1"),
-        stamp: undefined,
-      },
-      "GitcoinContributorStatistics#numGrantsContributeToGte#10": {
-        providerSpec: getProviderSpec("Gitcoin", "GitcoinContributorStatistics#numGrantsContributeToGte#10"),
-        stamp: undefined,
-      },
-      "GitcoinContributorStatistics#numGrantsContributeToGte#25": {
-        providerSpec: getProviderSpec("Gitcoin", "GitcoinContributorStatistics#numGrantsContributeToGte#25"),
-        stamp: undefined,
-      },
-      "GitcoinContributorStatistics#numGrantsContributeToGte#100": {
-        providerSpec: getProviderSpec("Gitcoin", "GitcoinContributorStatistics#numGrantsContributeToGte#100"),
         stamp: undefined,
       },
       "GitcoinContributorStatistics#totalContributionAmountGte#10": {
@@ -104,16 +98,18 @@ export const makeTestCeramicContext = (initialState?: Partial<CeramicContextStat
       },
     },
     passportLoadResponse: undefined,
-    handleAddStamps: jest.fn(),
-    handlePatchStamps: jest.fn(),
-    handleCreatePassport: jest.fn(),
-    handleDeleteStamps: jest.fn(),
+    handleAddStamps: vi.fn(),
+    handlePatchStamps: vi.fn(),
+    handleCreatePassport: vi.fn(),
+    handleDeleteStamps: vi.fn(),
+    handleComposeRetry: vi.fn(),
     expiredProviders: [],
     expiredPlatforms: {},
     passportHasCacaoError: false,
-    cancelCeramicConnection: jest.fn(),
+    cancelCeramicConnection: vi.fn(),
     verifiedProviderIds: [],
     verifiedPlatforms: {},
+    platformExpirationDates: {},
     ...initialState,
   };
 };
@@ -123,19 +119,15 @@ export const makeTestCeramicContextWithExpiredStamps = (
 ): CeramicContextState => {
   let expiredPlatforms: Partial<Record<PLATFORM_ID, PlatformProps>> = {};
 
-  const ethPlatform = platforms.get("ETH");
-
-  if (ethPlatform) {
-    expiredPlatforms["ETH"] = {
-      platform: ethPlatform.platform,
-      platFormGroupSpec: ethPlatform.platFormGroupSpec,
-    };
-  }
+  expiredPlatforms["ETH"] = {
+    platform: new platforms.ETH.ETHPlatform(),
+    platFormGroupSpec: platforms.ETH.ProviderConfig,
+  };
 
   return {
     ...makeTestCeramicContext(initialState),
     expiredPlatforms,
-    expiredProviders: ["ETHAdvocate"],
+    expiredProviders: ["ETHScore#75"],
   };
 };
 
@@ -143,7 +135,7 @@ export const makeTestClaimingContext = (
   initialState?: Partial<StampClaimingContextState>
 ): StampClaimingContextState => {
   return {
-    claimCredentials: jest.fn(),
+    claimCredentials: vi.fn(),
     status: StampClaimProgressStatus.Idle,
     ...initialState,
   };
@@ -159,6 +151,7 @@ export const scorerContext = {
       connectMessage: "Verify amount",
       isEVM: true,
       possiblePoints: 7.4399999999999995,
+      displayPossiblePoints: 7.4399999999999995,
       earnedPoints: 0,
     },
     {
@@ -169,6 +162,7 @@ export const scorerContext = {
       connectMessage: "Connect Account",
       isEVM: true,
       possiblePoints: 12.93,
+      displayPossiblePoints: 12.93,
       earnedPoints: 0,
     },
     {
@@ -178,6 +172,7 @@ export const scorerContext = {
       description: "Connect your existing Twitter account to verify.",
       connectMessage: "Connect Account",
       possiblePoints: 3.63,
+      displayPossiblePoints: 3.63,
       earnedPoints: 3.63,
     },
     {
@@ -187,6 +182,7 @@ export const scorerContext = {
       description: "Connect your existing Discord account to verify.",
       connectMessage: "Connect Account",
       possiblePoints: 0.689,
+      displayPossiblePoints: 0.689,
       earnedPoints: 0,
     },
     {
@@ -196,6 +192,7 @@ export const scorerContext = {
       description: "Connect your existing Google Account to verify",
       connectMessage: "Connect Account",
       possiblePoints: 2.25,
+      displayPossiblePoints: 2.25,
       earnedPoints: 1,
     },
   ],
@@ -203,7 +200,7 @@ export const scorerContext = {
 } as unknown as ScorerContextState;
 
 export const createWalletStoreMock = () => {
-  const mockConnect = jest.fn();
+  const mockConnect = vi.fn();
 
   const mockWalletState = {
     address: "0x123",
@@ -221,52 +218,30 @@ export const createWalletStoreMock = () => {
 };
 
 const datastoreConnectionContext = {
-  connect: jest.fn(),
-  disconnect: jest.fn(),
+  connect: vi.fn(),
+  disconnect: vi.fn(),
   dbAccessToken: "token",
-  dbAccessTokenStatus: "idle" as DbAuthTokenStatus,
-  did: jest.fn() as any,
-  checkSessionIsValid: jest.fn().mockImplementation(() => true),
+  dbAccessTokenStatus: "connected" as DbAuthTokenStatus,
+  did: vi.fn() as any,
+  checkSessionIsValid: vi.fn().mockImplementation(() => true),
 };
 
 export const renderWithContext = (
   ceramicContext: CeramicContextState,
   ui: React.ReactElement<any, string | React.JSXElementConstructor<any>>,
-  datastoreContextOverride: Partial<DatastoreConnectionContextState> = {}
-) =>
-  render(
-    <DatastoreConnectionContext.Provider value={{ ...datastoreConnectionContext, ...datastoreContextOverride }}>
-      <ScorerContext.Provider value={scorerContext}>
-        <CeramicContext.Provider value={ceramicContext}>{ui}</CeramicContext.Provider>
-      </ScorerContext.Provider>
-    </DatastoreConnectionContext.Provider>
+  datastoreContextOverride: Partial<DatastoreConnectionContextState> = {},
+  scorerContextOverride: Partial<ScorerContextState> = {}
+) => {
+  const queryClient = new QueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <WagmiProvider config={wagmiConfig}>
+        <DatastoreConnectionContext.Provider value={{ ...datastoreConnectionContext, ...datastoreContextOverride }}>
+          <ScorerContext.Provider value={{ ...scorerContext, ...scorerContextOverride }}>
+            <CeramicContext.Provider value={ceramicContext}>{ui}</CeramicContext.Provider>
+          </ScorerContext.Provider>
+        </DatastoreConnectionContext.Provider>
+      </WagmiProvider>
+    </QueryClientProvider>
   );
-
-export const testOnChainContextState = (initialState?: Partial<OnChainContextState>): OnChainContextState => {
-  return {
-    onChainProviders: {},
-    activeChainProviders: [
-      {
-        providerName: "githubAccountCreationGte#90",
-        credentialHash: "v0.0.0:rnutMGjNA2yPx/8xzJdn6sXDsY46lLUNV3DHAHoPJJg=",
-        expirationDate: new Date("2090-07-31T11:49:51.433Z"),
-        issuanceDate: new Date("2023-07-02T11:49:51.433Z"),
-      },
-      {
-        providerName: "githubAccountCreationGte#180",
-        credentialHash: "v0.0.0:rnutMGjNA2yPx/8xzJdn6sXDsY46lLUNV3DHAHoPJJg=",
-        expirationDate: new Date("2090-07-31T11:49:51.433Z"),
-        issuanceDate: new Date("2023-07-02T11:49:51.433Z"),
-      },
-      {
-        providerName: "githubAccountCreationGte#365",
-        credentialHash: "v0.0.0:rnutMGjNA2yPx/8xzJdn6sXDsY46lLUNV3DHAHoPJJg=",
-        expirationDate: new Date("2090-07-31T11:49:51.433Z"),
-        issuanceDate: new Date("2023-07-02T11:49:51.433Z"),
-      },
-    ],
-    readOnChainData: jest.fn(),
-    onChainScores: {},
-    onChainLastUpdates: {},
-  };
 };

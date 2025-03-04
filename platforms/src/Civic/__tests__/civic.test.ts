@@ -1,6 +1,6 @@
 import { RequestPayload } from "@gitcoin/passport-types";
-import { CivicPassProvider } from "../Providers/civic";
-import { CivicPassLookupPass, CivicPassType, PassesForAddress } from "../Providers/types";
+import { CivicPassProvider } from "../Providers/civic.js";
+import { CivicPassLookupPass, CivicPassType, PassesForAddress } from "../Providers/types.js";
 import axios from "axios";
 
 // Mock out all top level functions, such as get, put, delete and post:
@@ -24,7 +24,7 @@ const dummyPass: CivicPassLookupPass = {
   expiry: now + expirySeconds,
   state: "ACTIVE",
   type: {
-    slotId: 0,
+    slotId: "0x00",
     address: userAddress,
   },
   identifier: "0x456",

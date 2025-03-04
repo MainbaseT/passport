@@ -1,31 +1,32 @@
-import * as Twitter from "./Twitter";
-import * as Ens from "./Ens";
-import * as Github from "./Github";
-import * as Gitcoin from "./Gitcoin";
-import * as Lens from "./Lens";
-import * as Poh from "./Poh";
-import * as Snapshot from "./Snapshot";
-import * as GnosisSafe from "./GnosisSafe";
-import * as NFT from "./NFT";
-import * as POAP from "./POAP";
-import * as ETH from "./ETH";
-import * as ZkSync from "./ZkSync";
-import * as Discord from "./Discord";
-import * as Linkedin from "./Linkedin";
-import * as GtcStaking from "./GtcStaking";
-import * as Google from "./Google";
-import * as Brightid from "./Brightid";
-import * as Coinbase from "./Coinbase";
-import * as GuildXYZ from "./GuildXYZ";
-import * as PHI from "./PHI";
-import * as Holonym from "./Holonym";
-import * as Idena from "./Idena";
-import * as Civic from "./Civic";
-import * as CyberConnect from "./CyberProfile";
-import * as TrustaLabs from "./TrustaLabs";
-import { PlatformSpec, PlatformGroupSpec, Provider } from "./types";
+import * as Ens from "./Ens/index.js";
+import * as Github from "./Github/index.js";
+import * as Gitcoin from "./Gitcoin/index.js";
+import * as Lens from "./Lens/index.js";
+import * as Snapshot from "./Snapshot/index.js";
+import * as GnosisSafe from "./GnosisSafe/index.js";
+import * as NFT from "./NFT/index.js";
+import * as POAP from "./POAP/index.js";
+import * as ETH from "./ETH/index.js";
+import * as ZkSync from "./ZkSync/index.js";
+import * as Discord from "./Discord/index.js";
+import * as Linkedin from "./Linkedin/index.js";
+import * as GtcStaking from "./GtcStaking/index.js";
+import * as Google from "./Google/index.js";
+import * as Brightid from "./Brightid/index.js";
+import * as Coinbase from "./Coinbase/index.js";
+import * as GuildXYZ from "./GuildXYZ/index.js";
+import * as Holonym from "./Holonym/index.js";
+import * as PhoneVerification from "./PhoneVerification/index.js";
+import * as Idena from "./Idena/index.js";
+import * as Civic from "./Civic/index.js";
+import * as TrustaLabs from "./TrustaLabs/index.js";
+import * as Outdid from "./Outdid/index.js";
+import * as AllowList from "./AllowList/index.js";
+import * as Binance from "./Binance/index.js";
+import * as CustomGithub from "./CustomGithub/index.js";
+import { PlatformSpec, PlatformGroupSpec, Provider } from "./types.js";
 
-type PlatformConfig = {
+export type PlatformConfig = {
   PlatformDetails: PlatformSpec;
   ProviderConfig: PlatformGroupSpec[];
   providers: Provider[];
@@ -36,14 +37,12 @@ type PlatformConfig = {
 const platforms: Record<string, PlatformConfig> = {
   GtcStaking,
   Gitcoin,
-  Twitter,
   Discord,
   Google,
   Github,
   Linkedin,
   Ens,
   Brightid,
-  Poh,
   ETH,
   Snapshot,
   NFT,
@@ -52,12 +51,15 @@ const platforms: Record<string, PlatformConfig> = {
   GnosisSafe,
   Coinbase,
   GuildXYZ,
-  PHI,
   Holonym,
+  PhoneVerification,
   Idena,
   Civic,
-  CyberConnect,
   TrustaLabs,
+  Outdid,
+  AllowList,
+  Binance,
+  CustomGithub,
 };
 
 if (process.env.NEXT_PUBLIC_FF_NEW_POAP_STAMPS === "on") {

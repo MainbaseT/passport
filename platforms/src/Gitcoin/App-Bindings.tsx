@@ -1,6 +1,7 @@
 import React from "react";
-import { AppContext, PlatformOptions, ProviderPayload } from "../types";
-import { Platform } from "../utils/platform";
+import { AppContext, PlatformOptions, ProviderPayload } from "../types.js";
+import { Platform } from "../utils/platform.js";
+import { Hyperlink } from "../utils/Hyperlink.js";
 
 export class GitcoinPlatform extends Platform {
   platformId = "Gitcoin";
@@ -12,16 +13,11 @@ export class GitcoinPlatform extends Platform {
   banner = {
     heading: (
       <div>
-        To qualify for the Gitcoin stamp, your contributions must be made to grant rounds officially funded by Gitcoin.
+        To qualify for the Gitcoin Stamp, your contributions must be made to grant rounds officially funded by Gitcoin.
         This includes designated rounds such as Citizens rounds, GG18, GG19, among others, as detailed{" "}
-        <a
-          href="https://github.com/ufkhan97/gitcoin-grants-heroku/blob/main/all_rounds.csv"
-          target="_blank"
-          rel="noreferrer"
-          className="underline text-foreground-4"
-        >
+        <Hyperlink href="https://github.com/ufkhan97/gitcoin-grants-heroku/blob/main/data/all_rounds.csv">
           here
-        </a>
+        </Hyperlink>
         .
       </div>
     ),
@@ -34,8 +30,8 @@ export class GitcoinPlatform extends Platform {
       </div>
     ),
     cta: {
-      label: "Find out more",
-      url: "https://support.gitcoin.co/gitcoin-knowledge-base/gitcoin-passport/understanding-your-eligibility-for-the-gitcoin-grants-stamp-on-gitcoin-passport",
+      label: "Learn more",
+      url: "https://support.passport.xyz/passport-knowledge-base/stamps/how-do-i-add-passport-stamps/connecting-gitcoin-grants-to-passport",
     },
   };
 

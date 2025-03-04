@@ -1,6 +1,7 @@
 import axios from "axios";
 import { Stamp } from "@gitcoin/passport-types";
-import { Logger, PassportDatabase } from "../src";
+import { Logger } from "../src/logger";
+import { PassportDatabase } from "../src/passportScorerClient";
 import { jest } from "@jest/globals";
 import { DID } from "dids";
 import { Ed25519Provider } from "key-did-provider-ed25519";

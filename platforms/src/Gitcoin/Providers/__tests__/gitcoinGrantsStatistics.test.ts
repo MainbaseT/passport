@@ -5,14 +5,14 @@ import { RequestPayload } from "@gitcoin/passport-types";
 
 // ----- Libs
 import axios from "axios";
-import { GitcoinGrantStatisticsProvider } from "../gitcoinGrantsStatistics";
-import { ProviderExternalVerificationError, type ProviderOptions } from "../../../types";
+import { GitcoinGrantStatisticsProvider } from "../gitcoinGrantsStatistics.js";
+import { type ProviderOptions } from "../../../types.js";
 
 jest.mock("axios");
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const userHandle = "my-login-handle";
-const cgrantsApiToken = process.env.CGRANTS_API_TOKEN;
+const cgrantsApiToken = process.env.SCORER_API_KEY;
 
 const address = "0x0";
 
@@ -34,7 +34,8 @@ const validCodeResponse = {
 };
 
 const testDataUrlPath = "/testing";
-const testUrl = process.env.CGRANTS_API_URL + testDataUrlPath;
+const testUrl =
+  process.env.SCORER_ENDPOINT + "/internal/cgrants" + testDataUrlPath;
 const testProviderPrefix = "GitcoinGrantStatisticsProviderTester";
 
 const code = "ABC123_ACCESSCODE";
@@ -65,7 +66,9 @@ describe("GitcoinGrantStatisticsProvider class", function () {
       recordAttribute,
     });
 
-    expect(gitcoin.type).toEqual(`${testProviderPrefix}#${recordAttribute}#${threshold}`);
+    expect(gitcoin.type).toEqual(
+      `${testProviderPrefix}#${recordAttribute}#${threshold}`,
+    );
     expect(gitcoin.urlPath).toEqual(testDataUrlPath);
   });
 });
@@ -85,7 +88,7 @@ describe("Attempt verification %s", function () {
       recordAttribute: string,
       threshold: number,
       returnedValue: number,
-      expectedValid: boolean
+      expectedValid: boolean,
     ) => {
       (axios.get as jest.Mock).mockImplementation((url) => {
         if (url.includes(testDataUrlPath))
@@ -115,7 +118,7 @@ describe("Attempt verification %s", function () {
             code,
           },
         } as unknown as RequestPayload,
-        {}
+        {},
       );
 
       expect(axios.get).toHaveBeenCalledTimes(1);
@@ -142,7 +145,7 @@ describe("Attempt verification %s", function () {
             `You do not qualify for this stamp. Your Grantee stats are less than the required thresholds: ${returnedValue} out of ${threshold}.`,
           ],
         });
-    }
+    },
   );
   it("should gracefully handle error responses from the scorer API", async () => {
     const error = "Error";
@@ -170,10 +173,10 @@ describe("Attempt verification %s", function () {
               code,
             },
           } as unknown as RequestPayload,
-          {}
-        )
+          {},
+        ),
     ).rejects.toThrow(
-      "Gitcoin Grants Statistic verification error: ProviderExternalVerificationError: Error getting user info: Error - Status 500: Internal Server Error - Details: {}."
+      "Gitcoin Grants Statistic verification error: ProviderExternalVerificationError: Error getting user info: Error - Status 500: Internal Server Error - Details: {}.",
     );
   });
 });

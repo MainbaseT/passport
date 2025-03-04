@@ -2,7 +2,7 @@
 import { ProviderContext, RequestPayload, VerifiedPayload } from "@gitcoin/passport-types";
 
 import { PLATFORM_ID, PROVIDER_ID } from "@gitcoin/passport-types";
-import { Platform as PlatformClass } from "./utils/platform";
+import { Platform as PlatformClass } from "./utils/platform.js";
 
 export type PlatformSpec = {
   icon?: string | undefined;
@@ -21,6 +21,7 @@ export type ProviderSpec = {
   hash?: string;
   icon?: string;
   description?: string;
+  isDeprecated?: boolean;
 };
 
 export type PlatformGroupSpec = {

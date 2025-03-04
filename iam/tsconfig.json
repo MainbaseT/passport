@@ -1,21 +1,18 @@
 {
   "extends": "../tsconfig.settings.json",
   "compilerOptions": {
-    "module": "esnext",
+    "module": "NodeNext",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "allowJs": true,
-    "target": "es6",
+    "target": "ES2022",
     "noImplicitAny": true,
-    "moduleResolution": "node",
+    "moduleResolution": "nodenext",
     "sourceMap": true,
     "outDir": "dist",
-    "baseUrl": ".",
+    "baseUrl": "src",
     "resolveJsonModule": true,
-    "paths": {
-      "*": ["../node_modules/*", "node_modules/*"]
-    },
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "__tests__/**/*"]
+  "include": ["src/**/*"]
 }

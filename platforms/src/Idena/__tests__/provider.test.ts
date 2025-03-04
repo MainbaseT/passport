@@ -1,20 +1,18 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 /* eslint-disable @typescript-eslint/require-await */
 
-import { ProviderContext, RequestPayload } from "@gitcoin/passport-types";
-import { IdenaAge10Provider, IdenaAge5Provider } from "../Providers/IdenaAgeProvider";
-import { IdenaContext } from "../procedures/idenaSignIn";
-import { initCacheSession, loadCacheSession, PlatformSession } from "../../utils/platform-cache";
+import { RequestPayload } from "@gitcoin/passport-types";
+import { IdenaContext } from "../procedures/idenaSignIn.js";
+import { initCacheSession, loadCacheSession } from "../../utils/platform-cache.js";
 import {
   IdenaStateHumanProvider,
   IdenaStateNewbieProvider,
   IdenaStateVerifiedProvider,
-} from "../Providers/IdenaStateProvider";
-import { IdenaStake100kProvider, IdenaStake10kProvider, IdenaStake1kProvider } from "../Providers/IdenaStakeProvider";
+} from "../Providers/IdenaStateProvider.js";
 
 // ----- Libs
 import axios from "axios";
-import { ProviderExternalVerificationError, ProviderInternalVerificationError } from "../../types";
+
 
 jest.mock("axios");
 
@@ -52,313 +50,177 @@ type IdenaCache = {
   signature?: string;
 };
 
-beforeAll(() => {
-  jest.useFakeTimers("modern");
-  jest.setSystemTime(new Date(Date.UTC(2023, 0, 1)));
-});
-
-afterAll(() => {
-  jest.useRealTimers();
-});
-
-beforeEach(async () => {
-  await initCacheSession(MOCK_SESSION_KEY);
-  const session = await loadCacheSession<IdenaCache>(MOCK_SESSION_KEY);
-  await session.set("address", MOCK_ADDRESS);
-  await session.set("signature", "signature");
-
-  mockedAxios.get.mockImplementation(async (url, config) => {
-    switch (url) {
-      case `/api/identity/${MOCK_ADDRESS}/age`:
-        return ageResponse;
-      case `/api/identity/${MOCK_ADDRESS}`:
-        return identityResponse;
-      case `/api/address/${MOCK_ADDRESS}`:
-        return addressResponse;
-      case "/api/epoch/last":
-        return lastEpochResponse;
-    }
+describe("Idena", () => {
+  beforeAll(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(Date.UTC(2023, 0, 1)));
   });
 
-  mockedAxios.create = jest.fn(() => mockedAxios);
-});
-
-afterEach(() => {
-  jest.clearAllMocks();
-});
-
-describe("Attempt verification", function () {
-  it("should return valid response", async () => {
-    const provider = new IdenaAge5Provider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
-
-    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-    expect(mockedAxios.get).toHaveBeenCalledWith(`/api/identity/${MOCK_ADDRESS}/age`);
-    expect(mockedAxios.get).toHaveBeenCalledWith("/api/epoch/last");
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        age: "gt5",
-      },
-      expiresInSeconds: 86401,
-    });
+  afterAll(() => {
+    jest.useRealTimers();
   });
 
-  it("should return false for low age", async () => {
-    const provider = new IdenaAge10Provider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
+  beforeEach(async () => {
+    await initCacheSession(MOCK_SESSION_KEY);
+    const session = await loadCacheSession<IdenaCache>(MOCK_SESSION_KEY);
+    await session.set("address", MOCK_ADDRESS);
+    await session.set("signature", "signature");
 
-    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-    expect(mockedAxios.get).toHaveBeenCalledWith(`/api/identity/${MOCK_ADDRESS}/age`);
-    expect(mockedAxios.get).toHaveBeenCalledWith("/api/epoch/last");
-    expect(verifiedPayload).toEqual(
-      expect.objectContaining({
-        valid: false,
-        errors: [`Idena age "${ageResponse.data.result}" is less than required age of "10" epochs`],
-      })
-    );
-  });
-
-  it("should return ProviderInternalVerificationError for wrong sessionKey", async () => {
-    const provider = new IdenaAge5Provider();
-    const payload = {
-      proofs: {
-        sessionKey: "sessionKey_wrong",
-      },
-    };
-    await expect(provider.verify(payload as unknown as RequestPayload, {} as IdenaContext)).rejects.toThrow(
-      ProviderInternalVerificationError
-    );
-    expect(mockedAxios.get).toHaveBeenCalledTimes(0);
-  });
-
-  it("should throw ProviderExternalVerificationError return false when the Idena API returns an error response", async () => {
     mockedAxios.get.mockImplementation(async (url, config) => {
-      throw new Error("Error");
+      switch (url) {
+        case `/api/identity/${MOCK_ADDRESS}/age`:
+          return ageResponse;
+        case `/api/identity/${MOCK_ADDRESS}`:
+          return identityResponse;
+        case `/api/address/${MOCK_ADDRESS}`:
+          return addressResponse;
+        case "/api/epoch/last":
+          return lastEpochResponse;
+      }
     });
-    mockedAxios.isAxiosError.mockReturnValue(true);
-    const provider = new IdenaAge5Provider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    await expect(provider.verify(payload as unknown as RequestPayload, {} as IdenaContext)).rejects.toThrow(
-      ProviderExternalVerificationError
-    );
-    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
-    expect(mockedAxios.get).toHaveBeenCalledWith(`/api/identity/${MOCK_ADDRESS}/age`);
+
+    mockedAxios.create = jest.fn(() => mockedAxios);
   });
 
-  it("shouldn't duplicate requests to the Idena API within the same context", async () => {
-    const provider1 = new IdenaAge5Provider();
-    const provider2 = new IdenaAge10Provider();
-    const context: ProviderContext = {};
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    await provider1.verify(payload as unknown as RequestPayload, context as IdenaContext);
-    await provider2.verify(payload as unknown as RequestPayload, context as IdenaContext);
-
-    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-    expect(mockedAxios.get).toHaveBeenCalledWith(`/api/identity/${MOCK_ADDRESS}/age`);
-    expect(mockedAxios.get).toHaveBeenCalledWith("/api/epoch/last");
+  afterEach(() => {
+    jest.clearAllMocks();
   });
-});
 
-describe("Check valid cases for state providers", function () {
-  it("Expected Human state", async () => {
-    const provider = new IdenaStateHumanProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
+  describe("Check valid cases for state providers", function () {
+    it("Expected Human state", async () => {
+      const provider = new IdenaStateHumanProvider();
+      const payload = {
+        proofs: {
+          sessionKey: MOCK_SESSION_KEY,
+        },
+      };
+      const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
 
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        state: "Human",
-      },
-      expiresInSeconds: 86401,
+      expect(verifiedPayload).toEqual({
+        valid: true,
+        record: {
+          address: MOCK_ADDRESS,
+          state: "Human",
+        },
+        expiresInSeconds: 86401,
+      });
     });
-  });
 
-  it("Expected Newbie state", async () => {
-    identityResponse.data.result.state = "Newbie";
-    const provider = new IdenaStateNewbieProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
+    it("Expected Newbie state", async () => {
+      identityResponse.data.result.state = "Newbie";
+      const provider = new IdenaStateNewbieProvider();
+      const payload = {
+        proofs: {
+          sessionKey: MOCK_SESSION_KEY,
+        },
+      };
+      const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
 
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        state: "Newbie",
-      },
-      expiresInSeconds: 86401,
+      expect(verifiedPayload).toEqual({
+        valid: true,
+        record: {
+          address: MOCK_ADDRESS,
+          state: "Newbie",
+        },
+        expiresInSeconds: 86401,
+      });
     });
-  });
 
-  it("Incorrect state", async () => {
-    identityResponse.data.result.state = "Newbie";
-    const provider = new IdenaStateVerifiedProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
+    it("Incorrect state", async () => {
+      identityResponse.data.result.state = "Newbie";
+      const provider = new IdenaStateVerifiedProvider();
+      const payload = {
+        proofs: {
+          sessionKey: MOCK_SESSION_KEY,
+        },
+      };
+      const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
 
-    expect(verifiedPayload).toEqual(
-      expect.objectContaining({
-        valid: false,
-        errors: [`State "${identityResponse.data.result.state}" does not match acceptable state(s) Verified, Human`],
-      })
-    );
-  });
-
-  it("Expected Verified state", async () => {
-    identityResponse.data.result.state = "Verified";
-    const provider = new IdenaStateVerifiedProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
-
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        state: "Verified",
-      },
-      expiresInSeconds: 86401,
+      expect(verifiedPayload).toEqual(
+        expect.objectContaining({
+          valid: false,
+          errors: [`State "${identityResponse.data.result.state}" does not match acceptable state(s) Verified, Human`],
+        })
+      );
     });
-  });
 
-  it("Higher states acceptable for lower state stamps", async () => {
-    identityResponse.data.result.state = "Human";
-    const provider = new IdenaStateVerifiedProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
+    it("Expected Verified state", async () => {
+      identityResponse.data.result.state = "Verified";
+      const provider = new IdenaStateVerifiedProvider();
+      const payload = {
+        proofs: {
+          sessionKey: MOCK_SESSION_KEY,
+        },
+      };
+      const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
 
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        state: "Verified",
-      },
-      expiresInSeconds: 86401,
+      expect(verifiedPayload).toEqual({
+        valid: true,
+        record: {
+          address: MOCK_ADDRESS,
+          state: "Verified",
+        },
+        expiresInSeconds: 86401,
+      });
+    });
+
+    it("Higher states acceptable for lower state stamps", async () => {
+      identityResponse.data.result.state = "Human";
+      const provider = new IdenaStateVerifiedProvider();
+      const payload = {
+        proofs: {
+          sessionKey: MOCK_SESSION_KEY,
+        },
+      };
+      const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
+
+      expect(verifiedPayload).toEqual({
+        valid: true,
+        record: {
+          address: MOCK_ADDRESS,
+          state: "Verified",
+        },
+        expiresInSeconds: 86401,
+      });
     });
   });
 });
 
-describe("Check valid cases for stake balance providers", function () {
-  it("Expected Greater than 1k iDna", async () => {
-    const provider = new IdenaStake1kProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
-
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        stake: "gt1",
-      },
-      expiresInSeconds: 86401,
-    });
+describe("Idena Error", () => {
+  beforeAll(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(Date.UTC(2023, 0, 1)));
   });
 
-  it("Expected Greater than 10k iDna", async () => {
-    const provider = new IdenaStake10kProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
-
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        stake: "gt10",
-      },
-      expiresInSeconds: 86401,
-    });
+  afterAll(() => {
+    jest.useRealTimers();
   });
 
-  it("Expected Greater than 100k iDna", async () => {
-    const provider = new IdenaStake100kProvider();
-    const payload = {
-      proofs: {
-        sessionKey: MOCK_SESSION_KEY,
-      },
-    };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
-
-    expect(verifiedPayload).toEqual({
-      valid: true,
-      record: {
-        address: MOCK_ADDRESS,
-        stake: "gt100",
-      },
-      expiresInSeconds: 86401,
-    });
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  it("Incorrect stake", async () => {
-    const stakeResponse = {
-      data: { result: { stake: "10000.123" } },
+  it("should report errors from the API", async () => {
+    await initCacheSession(MOCK_SESSION_KEY);
+    const session = await loadCacheSession<IdenaCache>(MOCK_SESSION_KEY);
+    await session.set("address", MOCK_ADDRESS);
+    await session.set("signature", "signature");
+
+    mockedAxios.get.mockImplementation(async () => ({
+      data: { error: { message: "Idena API error" } },
       status: 200,
-    };
+    }));
 
-    mockedAxios.get.mockImplementation(async (url, config) => {
-      return stakeResponse;
-    });
+    mockedAxios.create = jest.fn(() => mockedAxios);
 
-    const provider = new IdenaStake100kProvider();
+    const provider = new IdenaStateVerifiedProvider();
     const payload = {
       proofs: {
         sessionKey: MOCK_SESSION_KEY,
       },
     };
-    const verifiedPayload = await provider.verify(payload as unknown as RequestPayload, {} as IdenaContext);
-
-    expect(verifiedPayload).toEqual(
-      expect.objectContaining({
-        valid: false,
-        errors: [`Stake "${stakeResponse.data.result.stake}" is not greater than minimum "100000" iDna`],
-      })
+    await expect(provider.verify(payload as unknown as RequestPayload, {} as IdenaContext)).rejects.toThrow(
+      "Idena API returned error: Idena API error"
     );
   });
 });
